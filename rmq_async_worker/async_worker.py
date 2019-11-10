@@ -33,10 +33,7 @@ class AsyncWorker:
         self.ack_mode = ack_mode
         self.channel = None
 
-
     def start(self, worker, response_handler):
-        self.logger.debug("AsyncWorker is starting to work.")
-
         ################################################################################################################
         # => Configuring exchanges and channels
         ################################################################################################################
@@ -54,6 +51,17 @@ class AsyncWorker:
         ################################################################################################################
         # <= Configuring exchanges and channels
         ################################################################################################################
+
+        self.logger.debug(
+            'AsyncWorker is starting to work. '
+            'Expecting messages from queue {}, bind to exchange {} with {} routing key. '
+            'Prefetch count: {}. Ack mode: {}'.format(
+                self.queue_params["queue"],
+                self.exchange_params["exchange"],
+                self.routing_key,
+                self.prefetch_count,
+                self.ack_mode
+            ))
 
         on_message_callback = functools.partial(
             AsyncWorker.__on_message,
@@ -77,7 +85,17 @@ class AsyncWorker:
         self.connection.close()
 
     @staticmethod
-    def __on_message(channel, method_frame, header_frame, body, args):
+    def __on_message(channel, method_frame, props, body, args):
+        logging.debug(
+            "Message received: {} from channel: {}. "
+            "With method_frame: {}. "
+            "Receiving props: {}. ".format(
+                body,
+                channel,
+                method_frame,
+                props
+            )
+        )
         (async_worker, worker, response_handler) = args
         connection = async_worker.connection
         threads = async_worker.threads
@@ -85,22 +103,22 @@ class AsyncWorker:
         delivery_tag = method_frame.delivery_tag
         t = threading.Thread(
             target=AsyncWorker.__do_work,
-            args=(connection, channel, delivery_tag, body, ack_mode, worker, response_handler)
+            args=(connection, channel, props, delivery_tag, body, ack_mode, worker, response_handler)
         )
         t.start()
         threads.append(t)
 
     @staticmethod
-    def __do_work(connection, channel, delivery_tag, body, ack_mode, worker, response_handler):
+    def __do_work(connection, channel, props, delivery_tag, body, ack_mode, worker, response_handler):
         try:
             ack_callback = functools.partial(AsyncWorker.__ack, channel, delivery_tag)
             if ack_mode == AckMode.ON_RECEIVED:
                 connection.add_callback_threadsafe(ack_callback)
                 results = worker.perform(body)
-                response_handler.response(results)
+                response_handler.response(results, props)
             else:
                 results = worker.perform(body)
-                response_handler.response(results)
+                response_handler.response(results, props)
                 connection.add_callback_threadsafe(ack_callback)
         except Exception as e:
             try:
@@ -117,7 +135,6 @@ class AsyncWorker:
         if channel.is_open:
             channel.basic_ack(delivery_tag=delivery_tag)
         else:
-            # Channel is closed, do nothing
             pass
 
     @staticmethod

@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='rmq_async_worker',
-    version='0.1',
+    version='0.1.1',
     author='Dmitry Rubinstein',
     author_email='rubinsteindb@gmail.com',
     description='RMQ Microservice scaffold',
